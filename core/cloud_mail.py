@@ -141,15 +141,29 @@ class CloudMailbox(BaseMailbox):
     def _fetch_messages(self, account: MailboxAccount) -> list[dict[str, Any]]:
         """向 Cloud Mail API 查询对应邮箱的邮件列表。"""
         email = account.email
+
+        # 候选请求 URL 依赖项
+        sep = "&" if "?" in self.api_url else "?"
         endpoints = [
+            f"{self.api_url}{sep}email={email}",
             f"{self.api_url}/api/v1/messages?email={email}",
             f"{self.api_url}/api/messages?email={email}",
             f"{self.api_url}/api/mails?email={email}",
+            f"{self.api_url}/api/v1/mail?email={email}",
+            f"{self.api_url}/api/mail?email={email}",
             f"{self.api_url}/messages?email={email}",
         ]
 
+        # 过滤重复项
+        seen_urls = set()
+        unique_endpoints = []
+        for url in endpoints:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                unique_endpoints.append(url)
+
         last_error = None
-        for endpoint in endpoints:
+        for endpoint in unique_endpoints:
             try:
                 resp = self.session.get(
                     endpoint,
@@ -165,11 +179,17 @@ class CloudMailbox(BaseMailbox):
                 if isinstance(data, list):
                     return data
                 if isinstance(data, dict):
-                    messages = data.get("messages") or data.get("mails") or data.get("data") or data.get("items")
+                    messages = (
+                        data.get("messages")
+                        or data.get("mails")
+                        or data.get("data")
+                        or data.get("items")
+                        or data.get("results")
+                    )
                     if isinstance(messages, list):
                         return messages
-                    # 单条邮件
-                    if "id" in data or "subject" in data or "text" in data or "html" in data:
+                    # 单条邮件或单条 JSON 响应（包含 code、subject、text、html、content、body）
+                    if any(k in data for k in ("id", "code", "subject", "text", "html", "content", "body", "verification_code")):
                         return [data]
                 return []
             except Exception as exc:
@@ -177,6 +197,7 @@ class CloudMailbox(BaseMailbox):
 
         logger.debug("获取 Cloud Mail 邮件失败 (%s): %s", email, last_error)
         return []
+
 
     def get_current_ids(self, account: MailboxAccount) -> set:
         """返回当前邮件 ID 集合。"""
@@ -188,9 +209,21 @@ class CloudMailbox(BaseMailbox):
         return ids
 
     @classmethod
+    def _clean_html(cls, html_text: str) -> str:
+        """从 HTML 文本中去除 style, script 标签及 HTML 标记，只留纯文本。"""
+        if not html_text:
+            return ""
+        # 去除 script 和 style 块
+        cleaned = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html_text)
+        # 去除 HTML 标签
+        cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+        # 去除多余空格
+        return " ".join(cleaned.split())
+
+    @classmethod
     def _extract_code_from_msg(cls, msg: dict[str, Any], pattern: re.Pattern[str]) -> str:
         """从单封邮件字典中搜寻验证码。"""
-        # 优先提取专属字段
+        # 1. 优先提取专属字段
         for field in ("code", "verification_code", "verify_code", "otp"):
             val = str(msg.get(field) or "").strip()
             if val:
@@ -198,19 +231,36 @@ class CloudMailbox(BaseMailbox):
                 if m:
                     return m.group(1) if m.groups() else m.group(0)
 
-        # 全文搜寻
-        text_content = " ".join([
+        # 准备待搜寻的文本块（包含原始文本与 HTML 清洗后的文本）
+        raw_text = str(msg.get("text") or msg.get("body") or msg.get("content") or "")
+        html_raw = str(msg.get("html") or "")
+        clean_html = cls._clean_html(html_raw)
+
+        full_text = " ".join([
             str(msg.get("subject") or ""),
-            str(msg.get("text") or ""),
-            str(msg.get("body") or ""),
-            str(msg.get("html") or ""),
-            str(msg.get("content") or ""),
+            raw_text,
+            clean_html,
         ])
 
-        m = pattern.search(text_content)
+        # 优先匹配标准的 6 位纯数字验证码（如 OpenAI / ChatGPT 发送的 686104），避免误匹配年份如 2026
+        six_digit_pattern = re.compile(r"(?<!#)(?<!\d)(\d{6})(?!\d)")
+        m6 = six_digit_pattern.search(full_text)
+        if m6:
+            return m6.group(1) if m6.groups() else m6.group(0)
+
+        # 兜底：使用传入的 pattern 匹配
+        m = pattern.search(full_text)
         if m:
             return m.group(1) if m.groups() else m.group(0)
+
+        # 如果清洗后没找到，尝试在原始 HTML 全文中搜寻
+        if html_raw:
+            m_raw = pattern.search(html_raw)
+            if m_raw:
+                return m_raw.group(1) if m_raw.groups() else m_raw.group(0)
+
         return ""
+
 
     def wait_for_code(
         self,
