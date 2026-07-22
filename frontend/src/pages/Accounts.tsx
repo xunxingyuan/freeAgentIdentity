@@ -201,7 +201,7 @@ function RegisterModal({
   const [configLoading, setConfigLoading] = useState(true)
   const [regCount, setRegCount] = useState(1)
   const [concurrency, setConcurrency] = useState(1)
-  const [dynamicProxy, setDynamicProxy] = useState('')
+  const [dynamicProxy, setDynamicProxy] = useState('http://172.17.0.1:7890')
   const [outlookPoolText, setOutlookPoolText] = useState('')
   const [autoDownloadAgentIdentity, setAutoDownloadAgentIdentity] = useState(false)
   const [agentIdentityDownload, setAgentIdentityDownload] = useState<{

@@ -9,6 +9,7 @@ Supports:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import re
@@ -30,10 +31,31 @@ def _truthy(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+FIRST_NAMES = (
+    "james", "john", "robert", "michael", "david", "william", "richard", "joseph", "thomas", "daniel",
+    "matthew", "anthony", "mark", "donald", "steven", "paul", "andrew", "joshua", "kenneth", "kevin",
+    "brian", "george", "edward", "ronald", "timothy", "jason", "jefrey", "ryan", "jacob", "gary",
+    "nicholas", "eric", "jonathan", "stephen", "larrry", "justin", "scott", "brandon", "benjamin", "samuel",
+    "mary", "patricia", "jennifer", "linda", "elizabeth", "barbara", "susan", "jessica", "sarah", "karen",
+    "lisa", "nancy", "betty", "margaret", "sandra", "ashley", "kimberly", "emily", "donna", "michelle",
+)
+
+LAST_NAMES = (
+    "smith", "johnson", "williams", "brown", "jones", "garcia", "miller", "davis", "rodriguez", "martinez",
+    "hernandez", "lopez", "gonzalez", "wilson", "anderson", "thomas", "taylor", "moore", "jackson", "martin",
+    "lee", "perez", "thompson", "white", "harris", "sanchez", "clark", "ramirez", "lewis", "robinson",
+)
+
+
 def _generate_random_email(domain: str) -> str:
     domain_clean = str(domain or "example.com").strip().lstrip("@")
-    rand_prefix = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
-    return f"usr_{rand_prefix}@{domain_clean}"
+    first = random.choice(FIRST_NAMES)
+    last = random.choice(LAST_NAMES)
+    num = random.randint(10, 9999)
+    sep = random.choice([".", "_", ""])
+    prefix = f"{first}{sep}{last}{num}"
+    return f"{prefix}@{domain_clean}"
+
 
 
 class CloudMailbox(BaseMailbox):
@@ -76,19 +98,16 @@ class CloudMailbox(BaseMailbox):
         return headers
 
     def peek_email(self) -> str:
-        """返回测试所用的预览邮箱地址。"""
         d = self.domain or "cloud-mail.example"
         return f"preview_test@{d}"
 
     def get_email(self) -> MailboxAccount:
-        """获取或生成一个可用邮箱账号。"""
         if not self.api_url:
-            raise RuntimeError("Cloud Mail 服务的 API 地址未配置")
+            raise RuntimeError("Cloud Mail API Address Not Configured")
 
         email = ""
         account_id = ""
 
-        # 如果开启了 API 方式创建账号
         if self.mode == "api_create":
             try:
                 url = f"{self.api_url}/api/v1/emails/create"
@@ -105,7 +124,7 @@ class CloudMailbox(BaseMailbox):
                     email = data.get("email") or data.get("address") or data.get("mail") or ""
                     account_id = str(data.get("id") or email)
             except Exception as exc:
-                logger.warning("Cloud Mail API 创建账号失败，回退到本地随机生成: %s", exc)
+                logger.warning("Cloud Mail API account creation failed, fallback to local random: %s", exc)
 
         if not email:
             email = _generate_random_email(self.domain or "cloud-mail.local")
@@ -139,10 +158,8 @@ class CloudMailbox(BaseMailbox):
         )
 
     def _fetch_messages(self, account: MailboxAccount) -> list[dict[str, Any]]:
-        """向 Cloud Mail API 查询对应邮箱的邮件列表。"""
         email = account.email
 
-        # 候选请求 URL 依赖项
         sep = "&" if "?" in self.api_url else "?"
         endpoints = [
             f"{self.api_url}{sep}email={email}",
@@ -154,7 +171,6 @@ class CloudMailbox(BaseMailbox):
             f"{self.api_url}/messages?email={email}",
         ]
 
-        # 过滤重复项
         seen_urls = set()
         unique_endpoints = []
         for url in endpoints:
@@ -188,42 +204,45 @@ class CloudMailbox(BaseMailbox):
                     )
                     if isinstance(messages, list):
                         return messages
-                    # 单条邮件或单条 JSON 响应（包含 code、subject、text、html、content、body）
                     if any(k in data for k in ("id", "code", "subject", "text", "html", "content", "body", "verification_code")):
                         return [data]
                 return []
             except Exception as exc:
                 last_error = exc
 
-        logger.debug("获取 Cloud Mail 邮件失败 (%s): %s", email, last_error)
+        logger.debug("Cloud Mail fetch messages failed (%s): %s", email, last_error)
         return []
 
+    @classmethod
+    def _get_msg_id(cls, msg: dict[str, Any], idx: int) -> str:
+        if not isinstance(msg, dict):
+            return f"msg_{idx}"
+        for key in ("id", "message_id", "id_str", "_id", "mid", "key"):
+            val = str(msg.get(key) or "").strip()
+            if val:
+                return val
+        content = f"{msg.get('subject')}|{msg.get('date')}|{msg.get('created_at')}|{msg.get('text')}|{msg.get('html')}|{msg.get('code')}"
+        if content.strip("|"):
+            return hashlib.md5(content.encode("utf-8")).hexdigest()
+        return f"msg_{idx}"
 
     def get_current_ids(self, account: MailboxAccount) -> set:
-        """返回当前邮件 ID 集合。"""
         messages = self._fetch_messages(account)
         ids = set()
         for idx, msg in enumerate(messages):
-            msg_id = str(msg.get("id") or msg.get("message_id") or msg.get("id_str") or idx)
-            ids.add(msg_id)
+            ids.add(self._get_msg_id(msg, idx))
         return ids
 
     @classmethod
     def _clean_html(cls, html_text: str) -> str:
-        """从 HTML 文本中去除 style, script 标签及 HTML 标记，只留纯文本。"""
         if not html_text:
             return ""
-        # 去除 script 和 style 块
-        cleaned = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html_text)
-        # 去除 HTML 标签
+        cleaned = re.sub(r"(?is)<(script|style).*?>.*?</>", " ", html_text)
         cleaned = re.sub(r"<[^>]+>", " ", cleaned)
-        # 去除多余空格
         return " ".join(cleaned.split())
 
     @classmethod
     def _extract_code_from_msg(cls, msg: dict[str, Any], pattern: re.Pattern[str]) -> str:
-        """从单封邮件字典中搜寻验证码。"""
-        # 1. 优先提取专属字段
         for field in ("code", "verification_code", "verify_code", "otp"):
             val = str(msg.get(field) or "").strip()
             if val:
@@ -231,7 +250,6 @@ class CloudMailbox(BaseMailbox):
                 if m:
                     return m.group(1) if m.groups() else m.group(0)
 
-        # 准备待搜寻的文本块（包含原始文本与 HTML 清洗后的文本）
         raw_text = str(msg.get("text") or msg.get("body") or msg.get("content") or "")
         html_raw = str(msg.get("html") or "")
         clean_html = cls._clean_html(html_raw)
@@ -242,25 +260,21 @@ class CloudMailbox(BaseMailbox):
             clean_html,
         ])
 
-        # 优先匹配标准的 6 位纯数字验证码（如 OpenAI / ChatGPT 发送的 686104），避免误匹配年份如 2026
         six_digit_pattern = re.compile(r"(?<!#)(?<!\d)(\d{6})(?!\d)")
         m6 = six_digit_pattern.search(full_text)
         if m6:
             return m6.group(1) if m6.groups() else m6.group(0)
 
-        # 兜底：使用传入的 pattern 匹配
         m = pattern.search(full_text)
         if m:
             return m.group(1) if m.groups() else m.group(0)
 
-        # 如果清洗后没找到，尝试在原始 HTML 全文中搜寻
         if html_raw:
             m_raw = pattern.search(html_raw)
             if m_raw:
                 return m_raw.group(1) if m_raw.groups() else m_raw.group(0)
 
         return ""
-
 
     def wait_for_code(
         self,
@@ -270,17 +284,16 @@ class CloudMailbox(BaseMailbox):
         before_ids: set | None = None,
         code_pattern: str | None = None,
     ) -> str:
-        """等待并在收到目标邮件后提取验证码。"""
         start_time = time.time()
         before = before_ids or set()
         pattern = re.compile(code_pattern or DEFAULT_CODE_PATTERN)
 
-        logger.info("开始在 Cloud Mail (%s) 等待验证码，超时 %d 秒...", account.email, timeout)
+        logger.info("Waiting for code in Cloud Mail (%s), timeout %d s...", account.email, timeout)
 
         while time.time() - start_time < timeout:
             messages = self._fetch_messages(account)
             for idx, msg in enumerate(messages):
-                msg_id = str(msg.get("id") or msg.get("message_id") or msg.get("id_str") or idx)
+                msg_id = self._get_msg_id(msg, idx)
                 if msg_id in before:
                     continue
 
@@ -297,12 +310,12 @@ class CloudMailbox(BaseMailbox):
 
                 code = self._extract_code_from_msg(msg, pattern)
                 if code:
-                    logger.info("在 Cloud Mail (%s) 成功接收验证码: %s", account.email, code)
+                    logger.info("Successfully received code in Cloud Mail (%s): %s", account.email, code)
                     return code
 
             time.sleep(self.poll_interval)
 
-        raise TimeoutError(f"在 Cloud Mail ({account.email}) 等待验证码超时（{timeout}s）")
+        raise TimeoutError(f"Timeout waiting for code in Cloud Mail ({account.email}) ({timeout}s)")
 
     def wait_for_link(
         self,
@@ -311,16 +324,15 @@ class CloudMailbox(BaseMailbox):
         timeout: int = 120,
         before_ids: set | None = None,
     ) -> str:
-        """等待并在收到目标邮件后提取验证链接。"""
         start_time = time.time()
         before = before_ids or set()
 
-        logger.info("开始在 Cloud Mail (%s) 等待验证链接，超时 %d 秒...", account.email, timeout)
+        logger.info("Waiting for link in Cloud Mail (%s), timeout %d s...", account.email, timeout)
 
         while time.time() - start_time < timeout:
             messages = self._fetch_messages(account)
             for idx, msg in enumerate(messages):
-                msg_id = str(msg.get("id") or msg.get("message_id") or msg.get("id_str") or idx)
+                msg_id = self._get_msg_id(msg, idx)
                 if msg_id in before:
                     continue
 
@@ -334,9 +346,9 @@ class CloudMailbox(BaseMailbox):
 
                 link = _extract_verification_link(full_text, keyword=keyword)
                 if link:
-                    logger.info("在 Cloud Mail (%s) 成功提取验证链接: %s", account.email, link)
+                    logger.info("Successfully received link in Cloud Mail (%s): %s", account.email, link)
                     return link
 
             time.sleep(self.poll_interval)
 
-        raise TimeoutError(f"在 Cloud Mail ({account.email}) 等待验证链接超时（{timeout}s）")
+        raise TimeoutError(f"Timeout waiting for link in Cloud Mail ({account.email}) ({timeout}s)")
