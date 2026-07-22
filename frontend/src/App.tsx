@@ -237,7 +237,6 @@ function Shell({
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg-base)]">
-      {/* <WelcomeDialog /> */}
       <Sidebar
         theme={theme}
         toggleTheme={toggleTheme}

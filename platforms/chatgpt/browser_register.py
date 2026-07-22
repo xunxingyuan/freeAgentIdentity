@@ -2172,14 +2172,10 @@ def _submit_about_you_via_page(page, log) -> dict:
               const placeholders = Array.from(document.querySelectorAll('input'))
                 .map((n) => String(n.placeholder || '').trim().toLowerCase())
                 .filter(Boolean);
-              const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
-                .map((n) => String(n.textContent || '').trim().toLowerCase())
-                .filter(Boolean);
-              const allText = labels.concat(placeholders).concat(headings);
               const hasAge = allText.some((t) =>
                 t === 'age' || t === 'edad' || t === 'âge' || t === 'alter' || t === 'idade' || t === '年齢' ||
-                t === 'उम्र' || t === 'आयु' || t === 'возраст' || t === 'العمر' ||
-                t.includes('how old') || t.includes('年龄') || t.includes('年齢') || t.includes('नाइ') || t.includes('उम्र') || t.includes('आयु')
+                t === 'उम्र' || t === 'आयु' || t === 'возраст' || t === 'العمر' || t === 'ವಯಸ್ಸು' || t === 'ವಯಸ್ಸನ್ನು' ||
+                t.includes('how old') || t.includes('年龄') || t.includes('年齢') || t.includes('नाइ') || t.includes('उम्र') || t.includes('आयु') || t.includes('ವಯಸ್ಸು') || t.includes('ವಯಸ್ಸನ್ನು')
               );
               const hasBirthday = allText.some((t) =>
                 t.includes('birthday') || t.includes('date of birth') || t.includes('birth') || t.includes('生日') || t.includes('出生') || t.includes('生年月日') || t.includes('誕生日') || t.includes('fecha de nacimiento') || t.includes('nascimento') || t.includes('geburtstag') || t.includes('naissance')
@@ -2195,14 +2191,27 @@ def _submit_about_you_via_page(page, log) -> dict:
     has_birthday_label = bool(mode_probe.get("hasBirthday"))
     has_age_field = any(_has_visible(candidate) for candidate in age_candidates)
     has_birthday_field = any(_has_visible(candidate) for candidate in birthday_candidates)
+
+    has_segmented_birthday = False
+    try:
+        has_segmented_birthday = (
+            page.locator('div[data-type="month"], input[data-type="month"]').count() > 0
+            or page.locator("input[placeholder*='MM'], input[placeholder*='mm']").count() > 0
+        )
+    except Exception:
+        has_segmented_birthday = False
+
     has_birthday_select = False
     try:
         has_birthday_select = page.locator("select:visible").count() >= 2
     except Exception:
         has_birthday_select = False
+
     if has_birthday_select:
         about_mode = "birthday_select"
-    elif (has_age_label and not has_birthday_label) or (has_age_field and not has_birthday_field):
+    elif has_segmented_birthday or has_birthday_label or has_birthday_field:
+        about_mode = "birthday"
+    elif (has_age_label or has_age_field or "age" in second_input_hints or len(ordered_visible_entries) >= 2):
         about_mode = "age"
     else:
         about_mode = "birthday"
