@@ -93,8 +93,10 @@ class CloudMailbox(BaseMailbox):
             "User-Agent": "aBaiAutoplus/cloud-mailbox",
         }
         if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
-            headers["X-API-Key"] = self.api_token
+            token_val = self.api_token.strip()
+            # Send raw token (as used by Cloud Mail v3.0.0 frontend) and legacy X-API-Key
+            headers["Authorization"] = token_val
+            headers["X-API-Key"] = token_val
         return headers
 
     def peek_email(self) -> str:
@@ -162,6 +164,9 @@ class CloudMailbox(BaseMailbox):
 
         sep = "&" if "?" in self.api_url else "?"
         endpoints = [
+            f"{self.api_url}/api/allEmail/list?accountEmail={email}",
+            f"{self.api_url}/api/allEmail/list?toEmail={email}",
+            f"{self.api_url}/api/allEmail/list",
             f"{self.api_url}{sep}email={email}",
             f"{self.api_url}/api/v1/messages?email={email}",
             f"{self.api_url}/api/messages?email={email}",
@@ -187,6 +192,21 @@ class CloudMailbox(BaseMailbox):
                     proxies=self.proxies,
                     timeout=self.request_timeout,
                 )
+                if resp.status_code in (404, 401):
+                    # Also try with "Bearer " prefix if raw token returned 401/404 on legacy endpoint
+                    if self.api_token and not self.api_token.startswith("Bearer "):
+                        h_bearer = dict(self._get_headers())
+                        h_bearer["Authorization"] = f"Bearer {self.api_token}"
+                        resp_b = self.session.get(
+                            endpoint,
+                            headers=h_bearer,
+                            proxies=self.proxies,
+                            timeout=self.request_timeout,
+                        )
+                        if resp_b.status_code == 200:
+                            resp = resp_b
+                        elif resp.status_code == 404:
+                            continue
                 if resp.status_code == 404:
                     continue
                 resp.raise_for_status()
@@ -195,6 +215,23 @@ class CloudMailbox(BaseMailbox):
                 if isinstance(data, list):
                     return data
                 if isinstance(data, dict):
+                    raw_data = data.get("data")
+                    if isinstance(raw_data, dict):
+                        messages = (
+                            raw_data.get("list")
+                            or raw_data.get("records")
+                            or raw_data.get("items")
+                            or raw_data.get("messages")
+                            or raw_data.get("mails")
+                        )
+                        if isinstance(messages, list):
+                            filtered = []
+                            for m in messages:
+                                if isinstance(m, dict):
+                                    to_addr = str(m.get("toEmail") or m.get("recipient") or "").lower()
+                                    if not email or not to_addr or email.lower() in to_addr or to_addr in email.lower():
+                                        filtered.append(m)
+                            return filtered if filtered else messages
                     messages = (
                         data.get("messages")
                         or data.get("mails")
