@@ -2121,7 +2121,6 @@ def _submit_about_you_via_page(page, log) -> dict:
         page.locator("input[placeholder*='年']"),
         page.locator("input[placeholder*='月']"),
         page.locator("input[placeholder*='日']"),
-        page.locator("input[inputmode='numeric']"),
         page.locator(
             "xpath=//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'birthday')]/following::input[1]"
         ),
@@ -2147,6 +2146,7 @@ def _submit_about_you_via_page(page, log) -> dict:
         page.locator("input[placeholder*='Age' i]"),
         page.locator("input[placeholder*='年龄']"),
         page.locator("input[placeholder*='年齢']"),
+        page.locator("input[inputmode='numeric']"),
         page.locator(
             "xpath=//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'age')]/following::input[1]"
         ),
@@ -2233,6 +2233,7 @@ def _submit_about_you_via_page(page, log) -> dict:
             'input[placeholder="age"]',
             'input[placeholder*="年龄"]',
             'input[id*="age" i]',
+            'input[inputmode="numeric"]',
         ]
     )
     if about_mode == "age" and len(ordered_visible_entries) >= 2:
@@ -2278,7 +2279,7 @@ def _submit_about_you_via_page(page, log) -> dict:
                 page.keyboard.type(yyyy, delay=50)
                 return True
 
-            # 方式3: Birthday label 下的第二个可见 input，直接点击后按数字键输入
+            # 方式3: Birthday label 下的 input
             birthday_input = page.get_by_label(re.compile(r"birthday|birth", re.IGNORECASE))
             if birthday_input.count() > 0:
                 birthday_input.first.click(force=True)
@@ -2286,39 +2287,6 @@ def _submit_about_you_via_page(page, log) -> dict:
                 page.keyboard.type(mm, delay=50)
                 page.keyboard.type(dd, delay=50)
                 page.keyboard.type(yyyy, delay=50)
-                return True
-
-            # 方式4: 第二个可见 input（name 是第一个）
-            inputs = page.locator("input:visible:not([type='hidden']):not([disabled])")
-            if inputs.count() >= 2:
-                target = inputs.nth(1)
-                target.click(force=True)
-                time.sleep(0.3)
-                # 先清空
-                page.keyboard.press("Control+a")
-                page.keyboard.press("Backspace")
-                time.sleep(0.1)
-                # 输入 MM，Tab 到 DD，Tab 到 YYYY
-                page.keyboard.type(mm, delay=80)
-                time.sleep(0.3)
-                page.keyboard.type(dd, delay=80)
-                time.sleep(0.3)
-                page.keyboard.type(yyyy, delay=80)
-                time.sleep(0.3)
-                # 验证是否填入了正确的值
-                val = str(target.input_value() or "").strip()
-                if val and val != target.get_attribute("placeholder"):
-                    return True
-                # 如果直接输入不行，试 Tab 切换
-                target.click(force=True)
-                time.sleep(0.2)
-                page.keyboard.press("Control+a")
-                page.keyboard.press("Backspace")
-                for i, part in enumerate([mm, dd, yyyy]):
-                    page.keyboard.type(part, delay=80)
-                    if i < 2:
-                        page.keyboard.press("Tab")
-                        time.sleep(0.2)
                 return True
         except Exception:
             pass
