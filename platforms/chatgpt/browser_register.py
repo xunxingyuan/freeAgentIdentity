@@ -2176,7 +2176,11 @@ def _submit_about_you_via_page(page, log) -> dict:
                 .map((n) => String(n.textContent || '').trim().toLowerCase())
                 .filter(Boolean);
               const allText = labels.concat(placeholders).concat(headings);
-              const hasAge = allText.some((t) => t === 'age' || t === 'edad' || t === 'âge' || t === 'alter' || t === 'idade' || t === '年齢' || t.includes('how old') || t.includes('年龄') || t.includes('年齢') || t.includes('나이'));
+              const hasAge = allText.some((t) =>
+                t === 'age' || t === 'edad' || t === 'âge' || t === 'alter' || t === 'idade' || t === '年齢' ||
+                t === 'उम्र' || t === 'आयु' || t === 'возраст' || t === 'العمر' ||
+                t.includes('how old') || t.includes('年龄') || t.includes('年齢') || t.includes('नाइ') || t.includes('उम्र') || t.includes('आयु')
+              );
               const hasBirthday = allText.some((t) =>
                 t.includes('birthday') || t.includes('date of birth') || t.includes('birth') || t.includes('生日') || t.includes('出生') || t.includes('生年月日') || t.includes('誕生日') || t.includes('fecha de nacimiento') || t.includes('nascimento') || t.includes('geburtstag') || t.includes('naissance')
               );
@@ -2189,8 +2193,8 @@ def _submit_about_you_via_page(page, log) -> dict:
 
     has_age_label = bool(mode_probe.get("hasAge"))
     has_birthday_label = bool(mode_probe.get("hasBirthday"))
-    has_age_field = any(_has_visible(candidate) for candidate in age_candidates[:3])
-    has_birthday_field = any(_has_visible(candidate) for candidate in birthday_candidates[:3])
+    has_age_field = any(_has_visible(candidate) for candidate in age_candidates)
+    has_birthday_field = any(_has_visible(candidate) for candidate in birthday_candidates)
     has_birthday_select = False
     try:
         has_birthday_select = page.locator("select:visible").count() >= 2
