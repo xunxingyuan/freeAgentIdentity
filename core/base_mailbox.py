@@ -150,10 +150,28 @@ def _create_api_mailbox(extra: dict, proxy: str | None) -> BaseMailbox:
     )
 
 
+def _create_cloud_mail(extra: dict, proxy: str | None) -> BaseMailbox:
+    from core.cloud_mail import CloudMailbox
+
+    return CloudMailbox(
+        api_url=extra.get("cloud_mail_api_url", ""),
+        api_token=extra.get("cloud_mail_api_token", ""),
+        domain=extra.get("cloud_mail_domain", ""),
+        mode=extra.get("cloud_mail_mode", "random"),
+        poll_interval=extra.get("cloud_mail_poll_interval", 3),
+        request_timeout=extra.get("cloud_mail_request_timeout", 15),
+        allow_reuse=str(extra.get("cloud_mail_allow_reuse", "")).strip().lower()
+        in {"1", "true", "yes", "on"},
+        proxy=proxy,
+    )
+
+
 MAILBOX_FACTORY_REGISTRY = {
     "local_ms_pool": _create_local_ms_pool,
     "api_mailbox": _create_api_mailbox,
+    "cloud_mail": _create_cloud_mail,
 }
+
 
 
 def create_mailbox(provider: str, extra: dict | None = None, proxy: str | None = None) -> BaseMailbox:

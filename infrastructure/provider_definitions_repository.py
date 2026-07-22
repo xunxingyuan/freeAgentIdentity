@@ -9,7 +9,7 @@ from core.db import ProviderDefinitionModel, ProviderSettingModel, engine
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_MAILBOX_PROVIDER_KEYS = ("local_ms_pool", "api_mailbox")
+SUPPORTED_MAILBOX_PROVIDER_KEYS = ("local_ms_pool", "api_mailbox", "cloud_mail")
 
 
 def _utcnow() -> datetime:
@@ -115,6 +115,70 @@ _BUILTIN_DEFINITIONS: list[dict] = [
             },
         ],
     },
+    {
+        "provider_type": "mailbox",
+        "provider_key": "cloud_mail",
+        "label": "开源 Cloud Mail 服务",
+        "description": "对接自建或开源 Cloud Mail API / Cloudflare Worker，实现自动创建邮箱与自动提取验证码",
+        "driver_type": "cloud_mail",
+        "default_auth_mode": "token",
+        "enabled": True,
+        "category": "custom",
+        "auth_modes": [{"value": "token", "label": "API Token 认证"}],
+        "fields": [
+            {
+                "key": "cloud_mail_api_url",
+                "label": "API 服务地址",
+                "placeholder": "https://mail.example.com",
+                "category": "connection",
+                "hint": "开源 Cloud Mail 服务或 Cloudflare Worker 基础 API URL。",
+            },
+            {
+                "key": "cloud_mail_api_token",
+                "label": "API 访问 Token",
+                "secret": True,
+                "category": "auth",
+                "placeholder": "Bearer sk-xxxxxxxxxxxx",
+                "hint": "用于 API 鉴权的 Token / API Key，网页配置后以加密形式存储。",
+            },
+            {
+                "key": "cloud_mail_domain",
+                "label": "邮箱后缀域名",
+                "placeholder": "my-domain.com",
+                "category": "connection",
+                "hint": "生成的临时邮箱域名后缀（例如 user@my-domain.com）。",
+            },
+            {
+                "key": "cloud_mail_mode",
+                "label": "邮箱生成模式",
+                "placeholder": "random",
+                "category": "connection",
+                "hint": "random: 本地/Worker 自动生成前缀地址；api_create: 调用 /api/v1/emails/create 显式创建账号。",
+            },
+            {
+                "key": "cloud_mail_poll_interval",
+                "label": "轮询间隔秒",
+                "placeholder": "3",
+                "default_value": "3",
+                "category": "connection",
+            },
+            {
+                "key": "cloud_mail_request_timeout",
+                "label": "单次请求超时秒",
+                "placeholder": "15",
+                "default_value": "15",
+                "category": "connection",
+            },
+            {
+                "key": "cloud_mail_allow_reuse",
+                "label": "允许重复使用邮箱",
+                "type": "toggle",
+                "category": "connection",
+                "hint": "测试时可开启；批量注册建议关闭。",
+            },
+        ],
+    },
+
     {
         "provider_type": "captcha",
         "provider_key": "yescaptcha_api",

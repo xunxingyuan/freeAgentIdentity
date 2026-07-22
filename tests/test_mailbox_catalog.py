@@ -19,4 +19,5 @@ def test_mailbox_driver_catalog_only_exposes_supported_providers():
 
     drivers = repository.list_driver_templates("mailbox")
 
-    assert {item["driver_type"] for item in drivers} == {"local_ms_pool", "api_mailbox"}
+    assert {item["driver_type"] for item in drivers} == {"local_ms_pool", "api_mailbox", "cloud_mail"}
+
