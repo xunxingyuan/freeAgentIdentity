@@ -322,10 +322,7 @@ function RegisterModal({
         auto_download_agent_identity: autoDownloadAgentIdentity,
       }
       if (selection.identityProvider === 'mailbox') {
-        if (selection.executorType === 'protocol') {
-          if (!outlookPoolText.trim()) {
-            throw new Error(t('accounts.outlookPoolRequired'))
-          }
+        if (selection.executorType === 'protocol' && outlookPoolText.trim()) {
           extra.mail_provider = 'local_ms_pool'
           extra.local_ms_pool_text = outlookPoolText.trim()
         } else {
@@ -335,6 +332,7 @@ function RegisterModal({
           extra.mail_provider = defaultMailboxProvider.provider_key
         }
       }
+
       const res = await apiFetch('/tasks/register', {
         method: 'POST',
         body: JSON.stringify({
@@ -564,7 +562,7 @@ function RegisterModal({
 
                 <Button
                   onClick={start}
-                  disabled={starting || !selection.identityProvider || !selection.executorType || (selection.executorType === 'protocol' && !outlookPoolText.trim())}
+                  disabled={starting || !selection.identityProvider || !selection.executorType}
                   className="w-full"
                 >
                   {starting ? t('accounts.starting') : t('accounts.startAutoRegister')}

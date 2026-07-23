@@ -278,12 +278,13 @@ const ZH_MESSAGES = {
   "accounts.verificationSummary": "验证策略",
   "accounts.missingDefaultMailbox":
     "未配置默认邮箱 provider，请先到设置页启用一个邮箱 provider",
-  "accounts.outlookPoolLabel": "Outlook 账号池（协议注册）",
+  "accounts.outlookPoolLabel": "邮箱配置 / Outlook 账号池（协议注册）",
   "accounts.outlookPoolHint":
-    "支持两种格式：① 邮箱----密码----Client ID----Refresh Token；② Xinlan/BH Mailer common 19 列格式。每行一个账号。",
+    "默认使用系统设置中的默认邮箱服务（如 Cloud Mail）；如需使用临时 Outlook 账号池，可在下方粘贴（可选）。支持：① 邮箱----密码----Client ID----Refresh Token；② Xinlan 19 列格式。",
   "accounts.outlookPoolPlaceholder":
-    "account@outlook.com----邮箱密码----client_id----refresh_token\n或粘贴 Xinlan/BH Mailer common 19 列账号",
-  "accounts.outlookPoolRequired": "协议注册必须填写 Outlook 账号池",
+    "（可选，留空则自动使用系统默认邮箱如 Cloud Mail）\n\n如使用 Outlook 账号池，请粘贴格式：\naccount@outlook.com----邮箱密码----client_id----refresh_token",
+  "accounts.outlookPoolRequired": "未配置系统默认邮箱，且未填写 Outlook 账号池",
+
   "accounts.protocolVerificationSummary": "内置 Sentinel + Outlook 邮箱 OTP",
   "accounts.autoDownloadAgentIdentity": "注册成功后直接下载 Agent Identity",
   "accounts.autoDownloadAgentIdentityHint":
