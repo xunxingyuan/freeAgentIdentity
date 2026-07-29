@@ -208,6 +208,21 @@ export function TaskLogPanel({
           ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
           : "border-sky-400/40 bg-sky-400/10 text-sky-200";
 
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancelTask = async () => {
+    if (!taskId) return;
+    setCancelling(true);
+    try {
+      const endpoint = currentStatus === "cancel_requested" ? `/tasks/${taskId}/force-cancel` : `/tasks/${taskId}/cancel`;
+      await apiFetch(endpoint, { method: "POST" });
+    } catch {
+      // Ignore
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const copyLogs = () => {
     navigator.clipboard
       ?.writeText(events.map((ev) => ev.line).join("\n"))
@@ -276,13 +291,25 @@ export function TaskLogPanel({
             {t("taskLog.liveTitle")}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={copyLogs}
-          className="rounded-full border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-        >
-          {t("taskLog.copyLogs")}
-        </button>
+        <div className="flex items-center gap-2">
+          {!isTerminalTaskStatus(currentStatus) && (
+            <button
+              type="button"
+              disabled={cancelling}
+              onClick={handleCancelTask}
+              className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/20"
+            >
+              {cancelling ? "取消中..." : currentStatus === "cancel_requested" ? "强行清除" : "取消/终止任务"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={copyLogs}
+            className="rounded-full border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            {t("taskLog.copyLogs")}
+          </button>
+        </div>
       </div>
 
       <div className="min-h-[260px] flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-input)] p-3 font-mono text-xs">

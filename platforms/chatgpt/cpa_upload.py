@@ -331,3 +331,157 @@ def test_cpa_connection(api_url: str, api_token: str, proxy: str = None) -> Tupl
         return False, "连接超时，请检查网络配置"
     except Exception as e:
         return False, f"连接测试失败: {str(e)}"
+
+
+def test_team_manager_connection(api_url: str, api_key: str) -> Tuple[bool, str]:
+    """测试 Team Manager 连接"""
+    if not api_url:
+        return False, "API URL 不能为空"
+    if not api_key:
+        return False, "API Key 不能为空"
+    url = f"{api_url.rstrip('/')}/api/accounts/import"
+    headers = {"X-API-Key": api_key}
+    try:
+        resp = cffi_requests.options(url, headers=headers, proxies=None, verify=False, timeout=10, impersonate="chrome110")
+        if resp.status_code in (200, 204, 401, 403, 405):
+            if resp.status_code == 401:
+                return False, "连接成功，但 API Key 无效"
+            return True, "Team Manager 连接测试成功"
+        return False, f"服务器返回异常状态码: {resp.status_code}"
+    except Exception as e:
+        return False, f"连接测试失败: {str(e)}"
+
+
+def upload_to_openwebui(
+    account, api_url: str = None, api_key: str = None
+) -> Tuple[bool, str]:
+    """上传单账号到 Open WebUI (支持直接添加 API 密钥 / OAuth token)"""
+    if not api_url:
+        api_url = _get_config_value("openwebui_url")
+    if not api_key:
+        api_key = _get_config_value("openwebui_key")
+    if not api_url:
+        return False, "Open WebUI API URL 未配置"
+
+    email = getattr(account, "email", "")
+    access_token = _extract_credential(account, "access_token")
+    if not access_token:
+        return False, "账号缺少 access_token"
+
+    url = f"{api_url.rstrip('/')}/api/v1/auths"
+    headers = {
+        "Authorization": f"Bearer {api_key or ''}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "email": email,
+        "token": access_token,
+        "type": "chatgpt",
+    }
+    try:
+        resp = cffi_requests.post(url, headers=headers, json=payload, proxies=None, verify=False, timeout=30, impersonate="chrome110")
+        if resp.status_code in (200, 201):
+            return True, "上传成功"
+        error_msg = f"上传失败: HTTP {resp.status_code}"
+        try:
+            detail = resp.json()
+            if isinstance(detail, dict):
+                error_msg = detail.get("message", detail.get("detail", error_msg))
+        except Exception:
+            error_msg = f"{error_msg} - {resp.text[:200]}"
+        return False, error_msg
+    except Exception as e:
+        logger.error(f"Open WebUI 上传异常: {e}")
+        return False, f"上传异常: {str(e)}"
+
+
+def test_openwebui_connection(api_url: str, api_key: str) -> Tuple[bool, str]:
+    """测试 Open WebUI 连接"""
+    if not api_url:
+        return False, "API URL 不能为空"
+    url = f"{api_url.rstrip('/')}/api/v1/auths"
+    headers = {"Authorization": f"Bearer {api_key or ''}"}
+    try:
+        resp = cffi_requests.get(url, headers=headers, proxies=None, verify=False, timeout=10, impersonate="chrome110")
+        if resp.status_code in (200, 204, 401, 403, 405):
+            if resp.status_code == 401:
+                return False, "连接成功，但 API Key 无效"
+            return True, "Open WebUI 连接测试成功"
+        return False, f"服务器返回异常状态码: {resp.status_code}"
+    except Exception as e:
+        return False, f"连接测试失败: {str(e)}"
+
+
+def upload_to_sub2api(
+    account, api_url: str = None, api_key: str = None
+) -> Tuple[bool, str]:
+    """上传单账号到 Sub2API"""
+    if not api_url:
+        api_url = _get_config_value("sub2api_url")
+    if not api_key:
+        api_key = _get_config_value("sub2api_key")
+    if not api_url:
+        return False, "Sub2API URL 未配置"
+
+    token_data = generate_token_json(account)
+    email = token_data.get("email", "")
+    access_token = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+    account_id = token_data.get("account_id", "")
+
+    if not access_token:
+        return False, "账号缺少 access_token"
+
+    url = f"{api_url.rstrip('/')}/api/v1/accounts/import"
+    headers = {
+        "Authorization": f"Bearer {api_key or ''}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "proxies": [],
+        "accounts": [
+            {
+                "name": email,
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {
+                    "access_token": access_token,
+                    "chatgpt_account_id": account_id,
+                    "refresh_token": refresh_token,
+                },
+            }
+        ],
+    }
+    try:
+        resp = cffi_requests.post(url, headers=headers, json=payload, proxies=None, verify=False, timeout=30, impersonate="chrome110")
+        if resp.status_code in (200, 201):
+            return True, "上传成功"
+        error_msg = f"上传失败: HTTP {resp.status_code}"
+        try:
+            detail = resp.json()
+            if isinstance(detail, dict):
+                error_msg = detail.get("message", detail.get("detail", error_msg))
+        except Exception:
+            error_msg = f"{error_msg} - {resp.text[:200]}"
+        return False, error_msg
+    except Exception as e:
+        logger.error(f"Sub2API 上传异常: {e}")
+        return False, f"上传异常: {str(e)}"
+
+
+def test_sub2api_connection(api_url: str, api_key: str) -> Tuple[bool, str]:
+    """测试 Sub2API 连接"""
+    if not api_url:
+        return False, "API URL 不能为空"
+    url = f"{api_url.rstrip('/')}/api/v1/accounts/import"
+    headers = {"Authorization": f"Bearer {api_key or ''}"}
+    try:
+        resp = cffi_requests.options(url, headers=headers, proxies=None, verify=False, timeout=10, impersonate="chrome110")
+        if resp.status_code in (200, 204, 401, 403, 405):
+            if resp.status_code == 401:
+                return False, "连接成功，但 API Key 无效"
+            return True, "Sub2API 连接测试成功"
+        return False, f"服务器返回异常状态码: {resp.status_code}"
+    except Exception as e:
+        return False, f"连接测试失败: {str(e)}"
+

@@ -46,6 +46,23 @@ class BatchExportRequest(BaseModel):
     search_filter: Optional[str] = None
 
 
+class BatchUploadRequest(BaseModel):
+    platform: str = "chatgpt"
+    target_type: str = "cpa"
+    ids: list[int] = Field(default_factory=list)
+    select_all: bool = False
+    status_filter: Optional[str] = None
+    search_filter: Optional[str] = None
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+class TestIntegrationRequest(BaseModel):
+    target_type: str = "cpa"
+    api_url: str = ""
+    api_key: str = ""
+
+
 def _stream_artifact(artifact: ExportArtifact) -> StreamingResponse:
     if isinstance(artifact.content, io.BytesIO):
         body = artifact.content
@@ -181,6 +198,38 @@ def export_accounts_any2api(body: BatchExportRequest):
 @router.post("/import")
 def import_accounts(body: ImportRequest):
     return service.import_accounts(body.platform, body.lines)
+
+
+@router.post("/batch-upload")
+def batch_upload_accounts(body: BatchUploadRequest):
+    from application.tasks import create_batch_upload_task
+    return create_batch_upload_task(body.model_dump())
+
+
+@router.post("/test-integration")
+def test_integration(body: TestIntegrationRequest):
+    from platforms.chatgpt.cpa_upload import (
+        test_cpa_connection,
+        test_team_manager_connection,
+        test_openwebui_connection,
+        test_sub2api_connection,
+    )
+    target = str(body.target_type or "cpa").lower()
+    url = str(body.api_url or "").strip()
+    key = str(body.api_key or "").strip()
+
+    testers = {
+        "cpa": test_cpa_connection,
+        "team_manager": test_team_manager_connection,
+        "openwebui": test_openwebui_connection,
+        "sub2api": test_sub2api_connection,
+    }
+    tester = testers.get(target)
+    if not tester:
+        raise HTTPException(400, f"不支持的目标系统类型: {target}")
+
+    ok, message = tester(url, key)
+    return {"ok": ok, "message": message}
 
 
 @router.get("/{account_id}")

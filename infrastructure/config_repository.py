@@ -10,6 +10,8 @@ class ConfigRepository:
         "default_identity_provider",
         "cpa_api_url", "cpa_api_key",
         "team_manager_url", "team_manager_key",
+        "openwebui_url", "openwebui_key",
+        "sub2api_url", "sub2api_key",
     }
 
     def __init__(self, definitions: ProviderDefinitionsRepository | None = None):

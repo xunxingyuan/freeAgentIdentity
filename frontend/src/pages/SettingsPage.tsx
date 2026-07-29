@@ -212,6 +212,10 @@ function GeneralTab({
         </div>
       </SettingGroup>
 
+      <div className="border-t border-[var(--border)]" />
+
+      <IntegrationsSection form={form} setForm={setForm} />
+
       <Button onClick={save} disabled={saving} className="w-full">
         <Save className="mr-2 h-4 w-4" />
         {saved
@@ -221,6 +225,100 @@ function GeneralTab({
             : t("common.saveSettings")}
       </Button>
     </div>
+  );
+}
+
+function IntegrationsSection({
+  form,
+  setForm,
+}: {
+  form: Record<string, string>;
+  setForm: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) {
+  const { t } = useI18n();
+  const [testingTarget, setTestingTarget] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ target: string; ok: boolean; message: string } | null>(null);
+
+  const runTest = async (targetType: string, urlKey: string, keyKey: string) => {
+    const apiUrl = form[urlKey] || "";
+    const apiKey = form[keyKey] || "";
+    if (!apiUrl) {
+      setTestResult({ target: targetType, ok: false, message: "请先填写 API 服务地址" });
+      return;
+    }
+    setTestingTarget(targetType);
+    setTestResult(null);
+    try {
+      const res = await apiFetch("/accounts/test-integration", {
+        method: "POST",
+        body: JSON.stringify({ target_type: targetType, api_url: apiUrl, api_key: apiKey }),
+      });
+      setTestResult({ target: targetType, ok: Boolean(res?.ok), message: res?.message || (res?.ok ? "连接正常" : "连接失败") });
+    } catch (e: any) {
+      setTestResult({ target: targetType, ok: false, message: e?.message || "测试请求失败" });
+    } finally {
+      setTestingTarget(null);
+    }
+  };
+
+  const systems = [
+    { key: "cpa", name: "CPA (Codex Protocol API)", urlField: "cpa_api_url", keyField: "cpa_api_key", urlPlaceholder: "https://cpa.example.com", keyPlaceholder: "Bearer sk-xxx" },
+    { key: "team_manager", name: "Team Manager", urlField: "team_manager_url", keyField: "team_manager_key", urlPlaceholder: "https://tm.example.com", keyPlaceholder: "X-API-Key xxx" },
+    { key: "openwebui", name: "Open WebUI", urlField: "openwebui_url", keyField: "openwebui_key", urlPlaceholder: "https://openwebui.example.com", keyPlaceholder: "Bearer sk-xxx" },
+    { key: "sub2api", name: "Sub2API", urlField: "sub2api_url", keyField: "sub2api_key", urlPlaceholder: "https://sub2api.example.com", keyPlaceholder: "Bearer sk-xxx" },
+  ];
+
+  return (
+    <SettingGroup
+      title="第三方系统集成与服务测试"
+      desc="配置 CPA、Team Manager、Open WebUI 以及 Sub2API 的推送目标地址与密钥，并可随时校验服务可用性。"
+    >
+      <div className="space-y-4">
+        {systems.map((sys) => (
+          <div key={sys.key} className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-[var(--text-primary)]">{sys.name}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testingTarget === sys.key}
+                onClick={() => runTest(sys.key, sys.urlField, sys.keyField)}
+                className="h-7 text-xs"
+              >
+                {testingTarget === sys.key ? "测试中..." : "验证服务可用性"}
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">API 服务地址</label>
+                <input
+                  type="text"
+                  value={form[sys.urlField] || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, [sys.urlField]: e.target.value }))}
+                  placeholder={sys.urlPlaceholder}
+                  className="control-surface w-full text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">API Key / Bearer Token</label>
+                <input
+                  type="password"
+                  value={form[sys.keyField] || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, [sys.keyField]: e.target.value }))}
+                  placeholder={sys.keyPlaceholder}
+                  className="control-surface w-full text-xs"
+                />
+              </div>
+            </div>
+            {testResult?.target === sys.key && (
+              <div className={`mt-2 rounded-lg border px-3 py-1.5 text-xs ${testResult.ok ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
+                {testResult.ok ? "✓ " : "✗ "}{testResult.message}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </SettingGroup>
   );
 }
 

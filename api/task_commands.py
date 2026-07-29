@@ -66,6 +66,20 @@ def cancel_task(task_id: str):
     return task
 
 
+@router.post("/{task_id}/force-cancel")
+def force_cancel_task(task_id: str):
+    task = command_service.force_cancel_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    return task
+
+
+@router.post("/clear-active")
+def clear_all_active_tasks():
+    count = command_service.clear_all_active_tasks()
+    return {"ok": True, "cleared_count": count, "message": f"已清理并重置 {count} 个活跃/排队任务"}
+
+
 @router.get("/{task_id}/logs/stream")
 async def stream_logs(task_id: str, since: int = 0):
     if not query_service.get_task(task_id):

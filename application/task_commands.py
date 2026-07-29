@@ -9,7 +9,9 @@ from application.tasks import (
     TASK_STATUS_FAILED,
     TASK_STATUS_INTERRUPTED,
     TERMINAL_TASK_STATUSES,
+    cancel_all_active_tasks,
     create_register_task,
+    force_cancel_task,
     get_task,
     list_task_events,
     request_cancel,
@@ -28,6 +30,16 @@ class TaskCommandsService:
         if task:
             task_runtime.wake_up()
         return task
+
+    def force_cancel_task(self, task_id: str) -> dict | None:
+        task = force_cancel_task(task_id)
+        task_runtime.wake_up()
+        return task
+
+    def clear_all_active_tasks(self) -> int:
+        count = cancel_all_active_tasks()
+        task_runtime.wake_up()
+        return count
 
     async def stream_task_events(self, task_id: str, *, since: int = 0) -> AsyncIterator[str]:
         cursor = since

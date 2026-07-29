@@ -26,6 +26,7 @@ from infrastructure.platform_runtime import PlatformRuntime
 TASK_TYPE_REGISTER = "register"
 TASK_TYPE_ACCOUNT_CHECK_ALL = "account_check_all"
 TASK_TYPE_PLATFORM_ACTION = "platform_action"
+TASK_TYPE_BATCH_UPLOAD = "batch_upload"
 
 TASK_STATUS_PENDING = "pending"
 TASK_STATUS_CLAIMED = "claimed"
@@ -213,6 +214,17 @@ def create_platform_action_task(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def create_batch_upload_task(payload: dict[str, Any]) -> dict[str, Any]:
+    ids = payload.get("ids") or []
+    count = len(ids) if isinstance(ids, list) and ids else 1
+    return create_task(
+        task_type=TASK_TYPE_BATCH_UPLOAD,
+        platform=str(payload.get("platform", "chatgpt")),
+        payload=payload,
+        progress_total=max(count, 1),
+    )
+
+
 def get_task(task_id: str) -> Optional[dict[str, Any]]:
     with Session(engine) as session:
         task = session.get(TaskModel, task_id)
@@ -292,6 +304,42 @@ def _request_cancel_mutation(task: TaskModel) -> None:
         task.error = task.error or "任务在开始前被取消"
     else:
         task.status = TASK_STATUS_CANCEL_REQUESTED
+
+
+def force_cancel_task(task_id: str) -> Optional[dict[str, Any]]:
+    with Session(engine) as session:
+        task = session.get(TaskModel, task_id)
+        if not task:
+            return None
+        task.status = TASK_STATUS_CANCELLED
+        task.finished_at = _utcnow()
+        task.error = task.error or "任务已被强制终止并移出队列"
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+    append_task_event(task_id, "已强行终止并清除任务", event_type="state", level="warning")
+    return serialize_task(task)
+
+
+def cancel_all_active_tasks() -> int:
+    with Session(engine) as session:
+        active_statuses = [
+            TASK_STATUS_PENDING,
+            TASK_STATUS_CLAIMED,
+            TASK_STATUS_RUNNING,
+            TASK_STATUS_CANCEL_REQUESTED,
+        ]
+        tasks = session.exec(
+            select(TaskModel).where(TaskModel.status.in_(active_statuses))
+        ).all()
+        count = len(tasks)
+        for task in tasks:
+            task.status = TASK_STATUS_CANCELLED
+            task.finished_at = _utcnow()
+            task.error = task.error or "批量清理阻塞任务"
+            session.add(task)
+        session.commit()
+    return count
 
 
 def claim_next_runnable_task(
@@ -550,6 +598,7 @@ def execute_task(task_id: str) -> None:
         TASK_TYPE_REGISTER: _execute_register_task,
         TASK_TYPE_ACCOUNT_CHECK_ALL: _execute_account_check_all_task,
         TASK_TYPE_PLATFORM_ACTION: _execute_platform_action_task,
+        TASK_TYPE_BATCH_UPLOAD: _execute_batch_upload_task,
     }
     handler = handlers.get(task_type)
     if not handler:
@@ -769,3 +818,72 @@ def _execute_account_check_all_task(payload: dict[str, Any], logger: TaskLogger)
         logger.set_progress(completed, total)
     logger.set_result_data(results)
     logger.finish(TASK_STATUS_SUCCEEDED)
+
+
+def _execute_batch_upload_task(payload: dict[str, Any], logger: TaskLogger) -> None:
+    from infrastructure.accounts_repository import AccountsRepository
+    from application.account_exports import AccountExportSelection, _to_cpa_account
+    from platforms.chatgpt.cpa_upload import (
+        upload_to_cpa,
+        upload_to_team_manager,
+        upload_to_openwebui,
+        upload_to_sub2api,
+    )
+
+    platform = str(payload.get("platform", "chatgpt") or "chatgpt")
+    target_type = str(payload.get("target_type", "cpa") or "cpa").lower()
+    api_url = str(payload.get("api_url") or "").strip()
+    api_key = str(payload.get("api_key") or "").strip()
+
+    repo = AccountsRepository()
+    selection = AccountExportSelection(
+        platform=platform,
+        ids=payload.get("ids") or [],
+        select_all=bool(payload.get("select_all")),
+        status_filter=str(payload.get("status_filter") or ""),
+        search_filter=str(payload.get("search_filter") or ""),
+    )
+    records = repo.list_for_export(selection)
+
+    total = len(records)
+    logger.set_progress(0, total)
+    if total == 0:
+        logger.finish(TASK_STATUS_SUCCEEDED, error="未选择有效账号")
+        return
+
+    logger.log(f"开始批量推送 {total} 个账号到 {target_type.upper()}...")
+    success_count = 0
+    fail_count = 0
+
+    upload_funcs = {
+        "cpa": upload_to_cpa,
+        "team_manager": upload_to_team_manager,
+        "openwebui": upload_to_openwebui,
+        "sub2api": upload_to_sub2api,
+    }
+    upload_fn = upload_funcs.get(target_type, upload_to_cpa)
+
+    for idx, item in enumerate(records, 1):
+        if logger.is_cancel_requested():
+            logger.finish(TASK_STATUS_CANCELLED, error="任务已被用户取消")
+            return
+
+        account = _to_cpa_account(item)
+        ok, msg = upload_fn(account, api_url=api_url, api_key=api_key)
+
+        if ok:
+            success_count += 1
+            logger.record_success()
+            logger.log(f"[{idx}/{total}] {item.email}: 推送成功")
+        else:
+            fail_count += 1
+            logger.record_error(msg)
+            logger.log(f"[{idx}/{total}] {item.email}: 推送失败 - {msg}", level="error")
+
+        logger.set_progress(idx, total)
+
+    result_summary = {"total": total, "success": success_count, "failed": fail_count}
+    logger.set_result_data(result_summary)
+    logger.log(f"批量推送完成: 成功 {success_count} 个, 失败 {fail_count} 个", event_type="summary")
+    logger.finish(TASK_STATUS_SUCCEEDED)
+

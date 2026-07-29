@@ -1482,6 +1482,147 @@ function ExportMenu({
   )
 }
 
+function BatchUploadModal({
+  open,
+  onClose,
+  platform,
+  selectedIds,
+  onTaskStarted,
+}: {
+  open: boolean;
+  onClose: () => void;
+  platform: string;
+  selectedIds: Set<number>;
+  onTaskStarted: (taskId: string, title: string) => void;
+}) {
+  const [targetType, setTargetType] = useState<string>("cpa");
+  const [apiUrl, setApiUrl] = useState<string>("");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setError("");
+      apiFetch("/config").then((cfg) => {
+        const urlKey = `${targetType}_url`;
+        const apiUrlKey = targetType === "cpa" ? "cpa_api_url" : urlKey;
+        const keyKey = targetType === "cpa" ? "cpa_api_key" : `${targetType}_key`;
+
+        setApiUrl(cfg[apiUrlKey] || "");
+        setApiKey(cfg[keyKey] || "");
+      }).catch(() => {});
+    }
+  }, [open, targetType]);
+
+  if (!open) return null;
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await apiFetch("/accounts/batch-upload", {
+        method: "POST",
+        body: JSON.stringify({
+          platform,
+          target_type: targetType,
+          ids: Array.from(selectedIds),
+          api_url: apiUrl.trim(),
+          api_key: apiKey.trim(),
+        }),
+      });
+      if (res?.task_id) {
+        onTaskStarted(res.task_id, `批量推送 ${selectedIds.size} 个账号到 ${targetType.toUpperCase()}`);
+        onClose();
+      } else {
+        setError(res?.detail || "发起推送任务失败");
+      }
+    } catch (e: any) {
+      setError(e?.message || "提交异常");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const targetOptions = [
+    { value: "cpa", label: "CPA (Codex Protocol API)" },
+    { value: "team_manager", label: "Team Manager" },
+    { value: "openwebui", label: "Open WebUI" },
+    { value: "sub2api", label: "Sub2API" },
+  ];
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+          <h3 className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <Upload className="h-5 w-5 text-[var(--accent)]" />
+            批量推送账号 ({selectedIds.size} 个)
+          </h3>
+          <button onClick={onClose} className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">目标系统</label>
+            <select
+              value={targetType}
+              onChange={(e) => setTargetType(e.target.value)}
+              className="control-surface w-full text-xs"
+            >
+              {targetOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">API 服务地址</label>
+            <input
+              type="text"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              placeholder="留空则使用系统默认设置"
+              className="control-surface w-full text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">API Key / Bearer Token</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="留空则使用系统默认设置"
+              className="control-surface w-full text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-[var(--border)] pt-4">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit} disabled={submitting || selectedIds.size === 0}>
+            {submitting ? "提交中..." : "确认批量推送"}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Main ────────────────────────────────────────────────────
 export default function Accounts() {
   const { t, language } = useI18n()
@@ -1503,6 +1644,7 @@ export default function Accounts() {
   const [batchRefreshing, setBatchRefreshing] = useState(false)
   const [batchTask, setBatchTask] = useState<{ taskId: string; title: string } | null>(null)
   const [batchTaskStatus, setBatchTaskStatus] = useState<string | null>(null)
+  const [showBatchUpload, setShowBatchUpload] = useState(false)
 
   useEffect(() => {
     getPlatforms().then((list: any[]) => {
@@ -1601,6 +1743,16 @@ export default function Accounts() {
       {showImport && <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); load() }} />}
       {showRegister && <RegisterModal platformMeta={platformsMap[tab]} onClose={() => setShowRegister(false)} onDone={() => load()} />}
       {actionResult && <ActionResultModal title={actionResult.title} payload={actionResult.payload} onClose={() => setActionResult(null)} />}
+      <BatchUploadModal
+        open={showBatchUpload}
+        onClose={() => setShowBatchUpload(false)}
+        platform={tab}
+        selectedIds={selectedIds}
+        onTaskStarted={(taskId, title) => {
+          setBatchTask({ taskId, title });
+          setBatchTaskStatus(null);
+        }}
+      />
       {batchTask && (
         <ActionTaskModal
           title={batchTask.title}
@@ -1694,6 +1846,58 @@ export default function Accounts() {
           </div>
           
           <div className="flex items-center gap-2">
+            {selectedCount > 0 && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2.5 text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                  onClick={() => setShowBatchUpload(true)}
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  批量推送 ({selectedCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={bulkDeleting}
+                  className="h-7 px-2.5 text-red-500 hover:bg-red-500/10 hover:text-red-600"
+                  onClick={async () => {
+                    if (!confirm(t('accounts.deleteSelectedConfirm', { count: selectedCount }))) return
+                    setBulkDeleting(true)
+                    try {
+                      await Promise.allSettled(
+                        [...selectedIds].map(id => apiFetch(`/accounts/${id}`, { method: 'DELETE' }))
+                      )
+                      setSelectedIds(new Set())
+                      load()
+                    } finally {
+                      setBulkDeleting(false)
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {bulkDeleting ? t('common.deleting') : t('common.delete')}
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2.5 text-amber-500 hover:bg-amber-500/10"
+              title="一键终止并清理排队中或卡住的后台任务"
+              onClick={async () => {
+                if (!confirm("确定要强制终止并清理所有排队与运行中的后台任务吗？")) return
+                try {
+                  const res = await apiFetch('/tasks/clear-active', { method: 'POST' })
+                  alert(res.message || "已清理阻塞任务")
+                } catch (e: any) {
+                  alert(e?.message || "清理失败")
+                }
+              }}
+            >
+              清理阻塞队列
+            </Button>
             <Button
               variant="ghost"
               size="sm"
