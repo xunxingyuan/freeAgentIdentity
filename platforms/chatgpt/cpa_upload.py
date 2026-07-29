@@ -38,11 +38,17 @@ def _get_config_value(key: str) -> str:
 
 
 def _extract_credential(account, key: str) -> str:
-    """从 account 对象提取凭证，支持直接属性和 credentials 列表两种结构。"""
-    val = getattr(account, key, None)
-    if val:
-        return str(val)
-    creds = getattr(account, "credentials", None) or []
+    """从 account 对象提取凭证，支持 dict 和各种对象结构。"""
+    if isinstance(account, dict):
+        val = account.get(key)
+        if val:
+            return str(val)
+        creds = account.get("credentials") or []
+    else:
+        val = getattr(account, key, None)
+        if val:
+            return str(val)
+        creds = getattr(account, "credentials", None) or []
     if isinstance(creds, list):
         for c in creds:
             if isinstance(c, dict) and c.get("key") == key:
@@ -82,23 +88,32 @@ def _format_cpa_timestamp(value) -> str:
 
 
 def generate_token_json(account) -> dict:
-    """生成 CPA 格式的 Token JSON。"""
-    email = getattr(account, "email", "")
+    """生成 CPA 格式的 Token JSON，兼容 account 对象与 dict。"""
+    if isinstance(account, dict) and "account_id" in account and "email" in account and "access_token" in account:
+        return account
+
+    if isinstance(account, dict):
+        email = account.get("email", "")
+        user_id = account.get("user_id", "")
+        expired_raw = account.get("expired") or account.get("expires_at")
+        account_id_raw = account.get("account_id") or account.get("chatgpt_account_id") or user_id
+    else:
+        email = getattr(account, "email", "")
+        user_id = getattr(account, "user_id", "")
+        expired_raw = getattr(account, "expired", None) or getattr(account, "expires_at", None)
+        account_id_raw = getattr(account, "account_id", None) or getattr(account, "chatgpt_account_id", None) or user_id
+
     access_token = _extract_credential(account, "access_token")
     refresh_token = _extract_credential(account, "refresh_token")
     id_token = _extract_credential(account, "id_token")
     session_token = _extract_credential(account, "session_token")
 
     logger.info(f"[CPA] email={email}, access_token={'有' if access_token else '空'}"
-                f"({len(access_token)}字符), user_id={getattr(account, 'user_id', '(无)')}")
+                f"({len(access_token)}字符), user_id={user_id or '(无)'}")
 
-    expired_str = _format_cpa_timestamp(
-        getattr(account, "expired", None) or getattr(account, "expires_at", None)
-    )
+    expired_str = _format_cpa_timestamp(expired_raw)
     account_id = _first_text(
-        getattr(account, "account_id", None),
-        getattr(account, "chatgpt_account_id", None),
-        getattr(account, "user_id", None),
+        account_id_raw,
         _extract_credential(account, "account_id"),
         _extract_credential(account, "chatgpt_account_id"),
     )
@@ -123,7 +138,8 @@ def generate_token_json(account) -> dict:
         exp_timestamp = payload.get("exp")
         if isinstance(exp_timestamp, int) and exp_timestamp > 0:
             exp_dt = datetime.fromtimestamp(
-                exp_timestamp, tz=CPA_TIMEZONE)
+                exp_timestamp, tz=timezone.utc
+            ).astimezone(CPA_TIMEZONE)
             expired_str = exp_dt.strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
     # 3) fallback: /backend-api/me (用 access_token 调)
@@ -205,12 +221,14 @@ def generate_token_json(account) -> dict:
 
 
 def upload_to_cpa(
-    token_data: dict,
+    account_or_token_data: Union[dict, Any],
     api_url: str = None,
     api_key: str = None,
     proxy: str = None,
 ) -> Tuple[bool, str]:
     """上传单个账号到 CPA 管理平台（不走代理）。"""
+    tdata = generate_token_json(account_or_token_data)
+
     if not api_url:
         api_url = _get_config_value("cpa_api_url")
     if not api_key:
@@ -219,19 +237,19 @@ def upload_to_cpa(
         return False, "CPA API URL 未配置"
 
     # 上传前检查 account_id
-    if not token_data.get("account_id"):
+    if not tdata.get("account_id"):
         return False, "account_id 为空，无法上传 CPA（JWT 和所有 fallback 均未获取到）"
 
     upload_url = f"{api_url.rstrip('/')}/v0/management/auth-files"
-    filename = f"{token_data['email']}.json"
-    file_content = json.dumps(token_data, ensure_ascii=False, separators=(",", ":"))
+    filename = f"{tdata['email']}.json"
+    file_content = json.dumps(tdata, ensure_ascii=False, separators=(",", ":"))
     headers = {
         "Authorization": f"Bearer {api_key or ''}",
         "Content-Type": "application/json",
     }
 
-    logger.info(f"[CPA] 上传: email={token_data['email']}, "
-                f"account_id={token_data.get('account_id','')}")
+    logger.info(f"[CPA] 上传: email={tdata['email']}, "
+                f"account_id={tdata.get('account_id','')}")
 
     try:
         from urllib.parse import quote
