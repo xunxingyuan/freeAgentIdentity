@@ -843,7 +843,7 @@ def _execute_batch_upload_task(payload: dict[str, Any], logger: TaskLogger) -> N
         status_filter=str(payload.get("status_filter") or ""),
         search_filter=str(payload.get("search_filter") or ""),
     )
-    records = repo.list_for_export(selection)
+    records = repo.select_for_export(selection)
 
     total = len(records)
     logger.set_progress(0, total)
