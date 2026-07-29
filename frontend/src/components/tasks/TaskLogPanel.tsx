@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import { API_BASE, apiFetch } from "@/lib/utils";
+import { API_BASE, apiFetch, getAuthToken } from "@/lib/utils";
 import { getTaskStatusText, isTerminalTaskStatus } from "@/lib/tasks";
 import { useI18n } from "@/lib/i18n-context";
 
@@ -105,7 +105,9 @@ export function TaskLogPanel({
       }
     };
 
-    const es = new EventSource(`${API_BASE}/tasks/${taskId}/logs/stream`);
+    const token = getAuthToken();
+    const streamUrl = `${API_BASE}/tasks/${taskId}/logs/stream` + (token ? `?token=${encodeURIComponent(token)}` : '');
+    const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
     es.onopen = () => {
       sseHealthyRef.current = true;

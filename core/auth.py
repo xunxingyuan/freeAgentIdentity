@@ -45,4 +45,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.cookies.get("_auth") == password:
             return await call_next(request)
 
+        # Check query parameter (for SSE EventSource)
+        if request.query_params.get("token") == password:
+            return await call_next(request)
+
         return Response(content='{"detail":"Unauthorized"}', status_code=401, media_type="application/json")
