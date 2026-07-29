@@ -338,7 +338,9 @@ class ChatGPTPlatform(BasePlatform):
             api_url=params.get("cpa_api_url") or params.get("api_url"),
             api_key=params.get("cpa_api_key") or params.get("api_key"),
         )
-        return {"ok": ok, "data": msg}
+        if ok:
+            return {"ok": True, "data": {"message": msg}}
+        return {"ok": False, "error": msg, "data": {"message": msg}}
 
     def _handle_upload_tm(self, account: Account, params: dict) -> dict:
         from platforms.chatgpt.cpa_upload import upload_to_team_manager
@@ -347,5 +349,7 @@ class ChatGPTPlatform(BasePlatform):
             api_url=params.get("team_manager_url") or params.get("api_url"),
             api_key=params.get("team_manager_key") or params.get("api_key"),
         )
-        return {"ok": ok, "data": msg}
+        if ok:
+            return {"ok": True, "data": {"message": msg}}
+        return {"ok": False, "error": msg, "data": {"message": msg}}
 
