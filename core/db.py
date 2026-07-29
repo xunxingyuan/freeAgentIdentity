@@ -13,13 +13,34 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+def _configure_engine(url: str):
+    connect_args = {}
+    if url.startswith("sqlite"):
+        connect_args["timeout"] = 30
+        connect_args["check_same_thread"] = False
+
+    eng = create_engine(url, connect_args=connect_args)
+
+    if url.startswith("sqlite"):
+        from sqlalchemy import event
+
+        @event.listens_for(eng, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA busy_timeout=30000;")
+            cursor.close()
+
+    return eng
+
+
 def _default_database_url() -> str:
     database_path = Path(__file__).resolve().parent.parent / "account_manager.db"
     return f"sqlite:///{database_path}"
 
 
 DATABASE_URL = os.getenv("ACCOUNT_MANAGER_DATABASE_URL", _default_database_url())
-engine = create_engine(DATABASE_URL)
+engine = _configure_engine(DATABASE_URL)
 
 
 class AccountModel(SQLModel, table=True):

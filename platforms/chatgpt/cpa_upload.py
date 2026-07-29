@@ -5,7 +5,7 @@ CPA (Codex Protocol API) 上传功能
 import json
 import base64
 import logging
-from typing import Tuple
+from typing import Any, Tuple, Union
 from datetime import datetime, timezone, timedelta
 
 from curl_cffi import requests as cffi_requests
