@@ -235,7 +235,6 @@ function IntegrationsSection({
   form: Record<string, string>;
   setForm: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
-  const { t } = useI18n();
   const [testingTarget, setTestingTarget] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ target: string; ok: boolean; message: string } | null>(null);
 
