@@ -834,6 +834,22 @@ function ActionParamsModal({
 
   useEffect(() => {
     setForm(initialValues)
+    apiFetch('/config')
+      .then((cfg) => {
+        setForm((current) => {
+          const next = { ...current }
+          const actionId = action?.id
+          if (actionId === 'upload_cpa') {
+            if (!next.api_url && cfg.cpa_api_url) next.api_url = cfg.cpa_api_url
+            if (!next.api_key && cfg.cpa_api_key) next.api_key = cfg.cpa_api_key
+          } else if (actionId === 'upload_tm') {
+            if (!next.api_url && cfg.team_manager_url) next.api_url = cfg.team_manager_url
+            if (!next.api_key && cfg.team_manager_key) next.api_key = cfg.team_manager_key
+          }
+          return next
+        })
+      })
+      .catch(() => {})
   }, [action?.id, initialValues])
 
   const params = Array.isArray(action?.params) ? action.params : []
@@ -847,7 +863,7 @@ function ActionParamsModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
           <div>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">{action?.label || '动作参数'}</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">填写执行该动作所需的参数</p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">填写执行该动作所需的参数（留空则自动使用系统预设配置）</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <X className="h-4 w-4" />
@@ -878,6 +894,7 @@ function ActionParamsModal({
                   <div className="mb-1 text-xs text-[var(--text-muted)]">{param.label || param.key}</div>
                   <textarea
                     value={value}
+                    placeholder="留空则自动使用系统已配置设置"
                     onChange={e => setForm(current => ({ ...current, [param.key]: e.target.value }))}
                     rows={3}
                     className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-2 text-sm outline-none focus:border-[var(--text-accent)]"
@@ -891,6 +908,7 @@ function ActionParamsModal({
                 <input
                   type={param.type === 'number' ? 'number' : 'text'}
                   value={value}
+                  placeholder="留空则自动使用系统已配置设置"
                   onChange={e => setForm(current => ({ ...current, [param.key]: e.target.value }))}
                   className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-hover)] px-3 py-2 text-sm outline-none focus:border-[var(--text-accent)]"
                 />
